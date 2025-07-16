@@ -3,8 +3,15 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
 import os
 import re
+
+# === Confusion Matrix and Classification Report ===
+from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # === Paths ===
 base_dir = 'D:/CP/ML_Model/orchid-dataset'
@@ -34,6 +41,12 @@ test_gen = ImageDataGenerator(rescale=1./255)
 train_data = train_gen.flow_from_directory(train_dir, target_size=img_size, batch_size=batch_size, class_mode='categorical')
 val_data = val_gen.flow_from_directory(val_dir, target_size=img_size, batch_size=batch_size, class_mode='categorical')
 test_data = test_gen.flow_from_directory(test_dir, target_size=img_size, batch_size=batch_size, class_mode='categorical', shuffle=False)
+
+# === Compute Class Weights ===
+labels = train_data.classes
+class_weights = compute_class_weight(class_weight='balanced', classes=np.unique(labels), y=labels)
+class_weights_dict = dict(enumerate(class_weights))
+print("Class weights:", class_weights_dict)
 
 # === Find latest model version ===
 def get_latest_version(base_name, directory='.'):
@@ -76,17 +89,17 @@ callbacks = [
 ]
 
 # === Continue Training ===
-history = model.fit(train_data, epochs=additional_epochs, validation_data=val_data, callbacks=callbacks)
+history = model.fit(train_data, epochs=additional_epochs, validation_data=val_data, callbacks=callbacks, class_weight=class_weights_dict)
 
 # === Evaluate ===
 loss, acc = model.evaluate(test_data)
-print(f" Test accuracy after training: {acc:.2f}")
+print("Test accuracy after training: {:.2f}".format(acc))
 
 # === Save as new version ===
 new_version = latest_version + 1
 new_model_name = f"{base_model_name}_v{new_version}"
 model.save(new_model_name)
-print(f" Saved model as: {new_model_name}")
+print(f"Saved model as: {new_model_name}")
 
 # === Export to TFLite ===
 converter = tf.lite.TFLiteConverter.from_saved_model(new_model_name)
@@ -96,3 +109,28 @@ tflite_path = f"{new_model_name}.tflite"
 with open(tflite_path, 'wb') as f:
     f.write(tflite_model)
 print(f"TFLite model exported as: {tflite_path}")
+
+
+# === Summary of Training ===
+
+
+
+# Predict class probabilities and labels
+y_pred_probs = model.predict(test_data)
+y_pred = y_pred_probs.argmax(axis=1)
+y_true = test_data.classes
+class_labels = list(test_data.class_indices.keys())
+
+# Print classification report
+print("\nClassification Report:")
+print(classification_report(y_true, y_pred, target_names=class_labels))
+
+# Plot confusion matrix
+cm = confusion_matrix(y_true, y_pred)
+plt.figure(figsize=(8,6))
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=class_labels, yticklabels=class_labels, cmap="Blues")
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.title('Confusion Matrix')
+plt.tight_layout()
+plt.show()
