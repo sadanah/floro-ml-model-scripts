@@ -1,79 +1,124 @@
 import tensorflow as tf
-from tensorflow.keras import layers, models
-from tensorflow.keras.applications import EfficientNetB0
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPool2D, Flatten, Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping
+from sklearn.metrics import classification_report, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
 import os
 
-# Paths
-base_dir = 'D:/CP/ML_Model/orchid-dataset'
-train_dir = os.path.join(base_dir, 'train')
-val_dir = os.path.join(base_dir, 'valid')
-test_dir = os.path.join(base_dir, 'test')
-
-# Parameters
-img_size = (224, 224)
-batch_size = 32
-epochs = 10
-
-# Data generators with augmentation on train only
-train_gen = ImageDataGenerator(
-    rescale=1./255,
-    rotation_range=20,
-    zoom_range=0.2,
-    horizontal_flip=True
+# Load data
+train_ds = tf.keras.utils.image_dataset_from_directory(
+    'orchid-dataset/train',
+    label_mode="categorical",
+    image_size=(224, 224),
+    batch_size=32
 )
 
-val_gen = ImageDataGenerator(rescale=1./255)
-test_gen = ImageDataGenerator(rescale=1./255)
-
-train_data = train_gen.flow_from_directory(
-    train_dir, target_size=img_size, batch_size=batch_size, class_mode='categorical'
-)
-val_data = val_gen.flow_from_directory(
-    val_dir, target_size=img_size, batch_size=batch_size, class_mode='categorical'
-)
-test_data = test_gen.flow_from_directory(
-    test_dir, target_size=img_size, batch_size=batch_size, class_mode='categorical', shuffle=False
+val_ds = tf.keras.utils.image_dataset_from_directory(
+    'orchid-dataset/valid',
+    label_mode="categorical",
+    image_size=(224, 224),
+    batch_size=32
 )
 
-# Model setup
-base_model = EfficientNetB0(
-    weights='imagenet',
-    include_top=False,
-    input_shape=(img_size[0], img_size[1], 3)
-)
-base_model.trainable = False  # Freeze base model initially
+# CNN Model
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=(224, 224, 3)),
+    Conv2D(32, (3, 3), activation='relu'),
+    MaxPool2D(pool_size=(2, 2)),
 
-model = models.Sequential([
-    base_model,
-    layers.GlobalAveragePooling2D(),
-    layers.Dense(128, activation='relu'),
-    layers.Dropout(0.3),
-    layers.Dense(train_data.num_classes, activation='softmax')
+    Conv2D(64, (3, 3), activation='relu', padding='same'),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPool2D(pool_size=(2, 2)),
+
+    Conv2D(128, (3, 3), activation='relu', padding='same'),
+    Conv2D(128, (3, 3), activation='relu'),
+    MaxPool2D(pool_size=(2, 2)),
+
+    Dropout(0.25),
+    Flatten(),
+    Dense(512, activation='relu'),
+    Dropout(0.4),
+    Dense(3, activation='softmax')  # 3 classes
 ])
 
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+model.summary()
+
+# Add early stopping callback
+early_stop = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
 
 # Train the model
 history = model.fit(
-    train_data,
-    epochs=epochs,
-    validation_data=val_data
+    train_ds,
+    validation_data=val_ds,
+    epochs=20,  # Let early stopping decide when to stop
+    callbacks=[early_stop]
 )
 
-# Evaluate on test set
-loss, acc = model.evaluate(test_data)
-print(f"Test accuracy: {acc:.2f}")
+# Save the model
+model.save("orchid_custom_cnn.keras")
 
-# Save the TensorFlow SavedModel
-model.save('orchid_disease_model')
+# Evaluate on validation set
+val_loss, val_acc = model.evaluate(val_ds)
+print("Validation Accuracy:", val_acc)
 
-# Convert to TensorFlow Lite
-converter = tf.lite.TFLiteConverter.from_saved_model('orchid_disease_model')
+# Convert to TFLite
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
 tflite_model = converter.convert()
-
-# Save the TFLite model file
-with open('orchid_disease_model.tflite', 'wb') as f:
+with open("orchid_custom_model.tflite", "wb") as f:
     f.write(tflite_model)
 
-print("✅ TFLite model exported as orchid_disease_model.tflite")
+print("✅ TFLite model saved as orchid_custom_model.tflite")
+
+# --- PLOTS & METRICS ---
+
+# Accuracy plot
+plt.plot(history.history['accuracy'], label='Train Acc', color='blue')
+plt.plot(history.history['val_accuracy'], label='Val Acc', color='orange')
+plt.xlabel("Epochs")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.title("Training vs Validation Accuracy")
+plt.show()
+
+# Confusion matrix + classification report
+# Reload validation set without shuffle
+val_ds_noshuffle = tf.keras.utils.image_dataset_from_directory(
+    'orchid-dataset/valid',
+    label_mode="categorical",
+    image_size=(224, 224),
+    batch_size=32,
+    shuffle=False
+)
+
+# Get class names
+class_names = val_ds_noshuffle.class_names
+
+# Get true and predicted labels
+true_labels = tf.concat([y for x, y in val_ds_noshuffle], axis=0)
+y_true = tf.argmax(true_labels, axis=1)
+
+y_pred_probs = model.predict(val_ds_noshuffle)
+y_pred = tf.argmax(y_pred_probs, axis=1)
+
+# Classification report
+print("\nClassification Report:")
+print(classification_report(y_true, y_pred, target_names=class_names))
+
+# Confusion Matrix
+cm = confusion_matrix(y_true, y_pred)
+plt.figure(figsize=(6, 5))
+sns.heatmap(cm, annot=True, fmt='d', xticklabels=class_names, yticklabels=class_names, cmap='Blues')
+plt.xlabel("Predicted Label")
+plt.ylabel("True Label")
+plt.title("Confusion Matrix")
+plt.tight_layout()
+plt.show()
