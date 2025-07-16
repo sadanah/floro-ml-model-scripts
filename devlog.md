@@ -113,3 +113,40 @@ Overfitting was a problem because the dataset was imbalanced
 
  After initial training of 10 epochs: loss: 0.8791 - accuracy: 0.5205
  After another augmentation and 10 epochs: loss: 0.8709 - accuracy: 0.5205
+
+
+
+ # 16.07.2025
+
+ ## Create clean and balanced dataset
+
+ Cropped all images to highlight image features only.
+ Augmented all classes to create balanced dataset of 900 images in each class for anthracnose, healthy, and soft-rot classes.
+ Augmentation included:
+ - Rotating: <10 degrees, 90, 180, 270 degrees
+ - Noise, Contrast, and Saturation filters (mild to none)
+
+## Create custom CNN model
+
+Created a custom CNN model from scratch to counter the model guessing issue with EfficientNet model.
+Ran 10 Epochs of training on the model. 
+Over 99% training accuracy and over 85% validation accuracy -> mild overfitting
+
+## Adjustments for overfitting
+
+Tested overfitting speficics using Test Vs. Validation Accuracy graph.
+Implemented early stopping to prevent overfitting. 
+Model accuracy remained the same since overfitting was not a critical issue.
+
+## Model evaluation 
+
+Evaluated the model using the 
+- Test Vs. Validation Accuracy Graph
+- Confusion Martix
+- Classification Report
+
+Data revealed that model was performing significantly well with 85.9% validation accuracy.
+
+## Git tracking
+
+Started tracking new changes to project. 
