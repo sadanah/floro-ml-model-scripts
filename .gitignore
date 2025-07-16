@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+floro310-env/
+
+#dataset
+orchid-dataset/
+
+#models
+orchid_custom_cnn.keras
+orchid_custom_model.tflite
+
+# Logs
+*.log
+
+# Jupyter Notebook checkpoints
+Train_plant_disease.ipynb
